@@ -1,3 +1,4 @@
 *.apk filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
 *.snap filter=lfs diff=lfs merge=lfs -text
+File[[:space:]]For_windows/XVSDK-Viewer-3.2.0-2-msvc2017-x64.exe filter=lfs diff=lfs merge=lfs -text
