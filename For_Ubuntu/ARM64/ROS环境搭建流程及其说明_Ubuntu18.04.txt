@@ -1,0 +1,122 @@
+一．所需文件
+ubuntu版本sdk安装包
+
+二. 搭建流程
+# 1. package prepare(基础文件准备)
+sudo apt-get install udev                       //安装udev
+cp ~/99-xvisio.rules ~/etc/udev/rules.d/	//若已存在则可跳过，若复制不成功见下文问题5解决
+sudo udevadm control --reload-rules && udevadm trigger  //让系统识别 usb 设备
+
+# 2. some libs（基础组件安装）
+sudo apt update
+sudo apt install -y lsb-release gnupg git g++ cmake cmake-curses-gui git pkg-config autoconf
+sudo apt install -y libtool libudev-dev libjpeg-dev zlib1g-dev libopencv-dev rapidjson-dev
+sudo apt install -y libeigen3-dev libboost-thread-dev libboost-filesystem-dev  libboost-system-dev
+sudo apt install -y libboost-program-options-dev libboost-date-time-dev
+
+# 3. ROS（必要的 ros 包的安装）（ubuntu 20.04需要将melodic替换为noetic）
+sudo rm /etc/apt/sources.list.d/ros-latest.list   //若提示无该文件可删除，跳过继续进行下一步
+sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
+sudo apt update
+sudo apt install -y ros-melodic-desktop-full ros-melodic-ddynamic-reconfigure
+sudo apt install -y python-rosdep python-rosinstall python-rosinstall-generator python-wstool build-essential
+sudo rosdep init         //如果出现问题见下面问题4解决
+rosdep update
+source /opt/ros/melodic/setup.bash
+echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc
+
+# 4. init catkin workspace
+mkdir -p ~/catkin_ws/src
+cd ~/catkin_ws/
+catkin_make		//在 ros 工作空间环境初始化，创建几个文件夹
+source ${HOME}/catkin_ws/devel/setup.bash
+echo "source ${HOME}/catkin_ws/devel/setup.bash" >> ~/.bashrc
+
+# 5. build xv_sdk
+根据Ubuntu版本安装sdk3.2.0（ubuntu 20.04需要使用xvsdk_3.2.0-20220304_focal_amd64.deb）
+xvsdk_3.2.0-20220304_bionic_arm64.deb   //双击xvsdk_3.2.0-20220304_bionic_arm64.deb安装或用命令安装，步骤见问题解决3
+cd ~/catkin_ws/
+cp -r xv_sdk ~/catkin_ws/src/		//将xv_sdk文件夹放到src文件夹中
+--------------------------------------------------------------------
+xv_sdk文件夹中include文件夹，xv_sdk.hpp文件的line 38，选配属性如下：
+//#define NOT_USE_RGB
+#define NOT_USE_TOF
+//#define NOT_USE_SGBM
+#define NOT_USE_FE
+//#define USE_MAPPING_ON_HOST
+
+#ifndef NOT_USE_TOF
+
+ // #define TOF_QVGA
+
+#endif/*#ifndef NOT_USE_TOF*/
+--------------------------------------------------------------------
+rosdep install --from-paths src --ignore-src -r -y	//安装工作空间中ros包的依赖
+catkin_make -DXVSDK_INCLUDE_DIRS="/usr/include/xvsdk" -DXVSDK_LIBRARIES="/usr/lib/libxvsdk.so"     //安装出错见问题2解决方案
+
+三. 启动（后面每次启动demo只需运行下面指令即可，需要开三个终端分别启动）
+# 1. node launch
+roscore						//用于启动ros master节点管理器
+
+# 2. roslaunch(in another terminal)
+cd ~/catkin_ws/
+roslaunch xv_sdk xv_sdk.launch			//启动 ros 关联的所有结点	
+
+# 3. run demo(in another terminal)
+rosrun rviz rviz -d `rospack find xv_sdk`/rviz/demo.rviz	//启动 demo
+
+//点击Color Image下的Image Topic可以选择查看rgb/tof/fisheye/rgbd的预览
+
+四. 问题：
+1. 在执行roscore时可能出现如下错误：
+（1）IOError:[Errno 13] Permission denied: 'home/[user]/.ros/roscore-11311.pid'
+该问题由于该路径下ros文件权限造成。
+输入：sudo chmod 777 -R ~/.ros/
+再次启动ROS：roscore
+（2）若存在不能正常启动的情况，可以执行：
+sudo apt-get install ros-melodic-desktop
+source ~/.bashrc
+再启动roscore
+
+2. 执行catkin_make时若出现一下错误：
+（1）通过CMakeList.txt找到No xvsdk provided, 即include和lib没识别到。
+很可能时先将xv_sdk拷贝到catkin_ws/src中，然后再执行catkin_make，则会报出上述错误。
+解决：将xv_sdk先删掉，然后执行catkin_make，再将xv_sdk复制过去即可。
+（2）若提示文件不存在，则检测文件是否存在异常。文件操作中操作不当可能会出现文件破损丢失的情况。
+
+3.Ubuntu18.04上安装xvsdk_3.2.0-2_amd64-18.04.deb
+(1)sudo apt-get update
+(2)sudo apt-get install -y g++ cmake libjpeg-dev zlib1g-dev udev libopencv-core3.2 libopencv-highgui-dev liboctomap1.8 libboost-chrono-dev libboost-thread-dev libboost-filesystem-dev  libboost-system-dev libboost-program-options-dev libboost-date-time-dev
+(3)sudo dpkg -i xvsdk_3.2.0-2_amd64-18.04.deb
+
+
+4.安装sudo rosdep init时报错:The 'rosdep==0.21.0' distribution was not found and is required by the application
+解决方案如下：将默认的python3改成python2
+sudo update-alternatives --config python
+sudo update-alternatives --list python
+sudo update-alternatives --install /usr/bin/python python /usr/bin/python2.7 1
+sudo update-alternatives --list python
+sudo update-alternatives --config python  根据提示操作输入1
+python   //查看默认的是python2.7.17，接下来继续安装sudo rosdep init
+
+
+5.99-xvisio.rules复制到etc/udev/rules.d/下失败
+解决方法：
+（1）sudo gedit /etc/udev/rules.d/99-xvisio.rules   //打开一个文本文件
+（2）粘贴以下内容，保存退出：
+SUBSYSTEM=="usb", ATTR{idVendor}=="040e", MODE="0666", GROUP="plugdev
+SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="05c6", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="22d9", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="19d2", MODE="0666", GROUP="plugdev"
+（3）ls /etc/udev/rules.d/   查看99-xvisio.rules是否存在
+（4）查看内容是否写入成功
+cd /etc/udev/rules.d
+cat 99-xvisio.rules
+
+
+6. 卸载ros方法：
+sudo apt-get purge ros-*
+
